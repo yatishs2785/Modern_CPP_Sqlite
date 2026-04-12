@@ -1,0 +1,56 @@
+create table Employee(Name string,  EmpID int , Basic float, Address String)
+
+create table book(Author string, price float, Pages int)
+
+create table student (Name string, RollNO int, age int, Weight float,height float, Percent float)
+
+
+insert into Employee value (Ajay Kumar;123456; 7786.2345; Andheri India)
+
+insert into Employee value (Vijay kumar;456789;64523.4736; Mumbai Near "KAMALA GARDEN"- Maharastra)
+
+insert into Employee value (Sanjay kumar;555555; 746.47; 2/3 room-20, Thane Mumabi-789456)
+
+
+insert into book value (YASHWANT KANETAK;534.323;333)
+
+insert into book value (Balaguswami;550.007;666)
+
+insert into book value (Denish Ritchi;320.112;222)
+
+
+insert into student value (Rajendra kumar;22;20; 55.55;5.8;77)
+
+insert into student value (Dharmendra kumar;55;21;88.88;5.9;44)
+
+insert into student value (Jitendra kumar;20;33;66.66;5.8;55)
+
+
+select * from student
+
+select * from book
+
+select * from Employee
+
+delete from student where percent =40
+
+drop table Employee
+drop table student
+drop table book
+
+
+display database
+
+quit database
+
+
+freeDatabase()
+
+SavedataBase()
+
+
+
+insert into book value (Yatish Shah;550.007;666)
+insert into book value (satish Shah;44.098;666)
+insert into book value (Ratish Shah;5320.007;666)
+insert into book value (Sparsh kumar;220.007;666)
