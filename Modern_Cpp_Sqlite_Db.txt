@@ -1,0 +1,248 @@
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <memory>
+#include <algorithm>
+
+// ------------------ Error Codes ------------------
+enum class ErrorCode {
+    SUCCESS = 1,
+    ERROR_INVALID_QUERY = -1,
+    ERROR_FILE_OPEN = -3,
+    ERROR_EMPTY_DATABASE = -6,
+    ERROR_UNKNOWN_TABLE = -7,
+    ERROR_INVALID_DATATYPE = -8
+};
+
+// ------------------ Structures ------------------
+struct Field {
+    std::string name;
+    int datatype; // 1=int, 2=float, 3=string
+};
+
+struct Row {
+    std::vector<std::string> values;
+};
+
+struct Table {
+    std::string name;
+    int rows = 0;
+    int cols = 0;
+    std::vector<Field> fields;
+    std::vector<Row> data;
+};
+
+// ------------------ Utility ------------------
+static std::string trim(const std::string &s) {
+    auto start = s.find_first_not_of(" \t");
+    auto end = s.find_last_not_of(" \t\n");
+    if (start == std::string::npos) return "";
+    return s.substr(start, end - start + 1);
+}
+
+// ------------------ Database Functions ------------------
+ErrorCode saveDatabase(const std::vector<std::unique_ptr<Table>> &db) {
+    std::ofstream fp("DATABASE.txt");
+    if (!fp) return ErrorCode::ERROR_FILE_OPEN;
+
+    for (const auto &t : db) {
+        fp << t->name << " " << t->cols << " " << t->rows << "\n";
+        for (const auto &f : t->fields) {
+            fp << f.name << " " << f.datatype << "\n";
+        }
+        for (const auto &row : t->data) {
+            for (const auto &val : row.values) {
+                fp << val << "\t";
+            }
+            fp << "\n";
+        }
+    }
+    std::cout << "Database saved.\n";
+    return ErrorCode::SUCCESS;
+}
+
+void displayTable(const Table &t) {
+    std::cout << "\nTable: " << t.name
+              << " (Cols=" << t.cols << ", Rows=" << t.rows << ")\n";
+    for (const auto &f : t.fields) {
+        std::cout << " " << f.name;
+        if (f.datatype == 1) std::cout << "(int)";
+        else if (f.datatype == 2) std::cout << "(float)";
+        else std::cout << "(string)";
+        std::cout << "\t";
+    }
+    std::cout << "\n";
+
+    for (const auto &row : t.data) {
+        for (const auto &val : row.values) {
+            std::cout << val << "\t";
+        }
+        std::cout << "\n";
+    }
+}
+
+// ------------------ Query Functions ------------------
+ErrorCode createTable(std::vector<std::unique_ptr<Table>> &db, const std::string &query) {
+    auto pos = query.find('(');
+    std::string header = query.substr(0, pos);
+    std::string fieldsStr = (pos != std::string::npos) ? query.substr(pos + 1, query.find(')', pos) - pos - 1) : "";
+
+    std::istringstream iss(header);
+    std::string keyword, tableName;
+    if (!(iss >> keyword >> tableName) || keyword != "table") {
+        return ErrorCode::ERROR_INVALID_QUERY;
+    }
+
+    auto t = std::make_unique<Table>();
+    t->name = tableName;
+
+    // Parse fields
+    std::istringstream fss(fieldsStr);
+    std::string fieldDef;
+    while (std::getline(fss, fieldDef, ',')) {
+        std::istringstream fs(trim(fieldDef));
+        std::string fname, dtype;
+        if (!(fs >> fname >> dtype)) continue;
+
+        Field f;
+        f.name = fname;
+        if (dtype == "int") f.datatype = 1;
+        else if (dtype == "float") f.datatype = 2;
+        else f.datatype = 3;
+        t->fields.push_back(f);
+    }
+    t->cols = static_cast<int>(t->fields.size());
+
+    db.push_back(std::move(t));
+    std::cout << "Table " << tableName << " created.\n";
+    return ErrorCode::SUCCESS;
+}
+
+ErrorCode insertIntoTable(std::vector<std::unique_ptr<Table>> &db, const std::string &query) {
+    if (db.empty()) return ErrorCode::ERROR_EMPTY_DATABASE;
+
+    std::istringstream iss(query);
+    std::string into, tableName, keyword;
+    if (!(iss >> into >> tableName >> keyword) || into != "into" || keyword != "value") {
+        return ErrorCode::ERROR_INVALID_QUERY;
+    }
+
+    auto it = std::find_if(db.begin(), db.end(),
+        [&](const std::unique_ptr<Table> &t) { return t->name == tableName; });
+    if (it == db.end()) return ErrorCode::ERROR_UNKNOWN_TABLE;
+
+    auto pos = query.find('(');
+    if (pos == std::string::npos) return ErrorCode::ERROR_INVALID_QUERY;
+    std::string valuesStr = query.substr(pos + 1);
+    valuesStr.erase(valuesStr.find_last_not_of(")") + 1);
+
+    std::istringstream vss(valuesStr);
+    std::string val;
+    Row row;
+    while (std::getline(vss, val, ';')) { // using ; as separator
+        row.values.push_back(trim(val));
+    }
+
+    if (row.values.size() != (*it)->cols) {
+        std::cout << "Column count mismatch.\n";
+        return ErrorCode::ERROR_INVALID_QUERY;
+    }
+
+    (*it)->data.push_back(row);
+    (*it)->rows++;
+    std::cout << "Row inserted into " << tableName << ".\n";
+    return ErrorCode::SUCCESS;
+}
+
+ErrorCode selectFromTable(const std::vector<std::unique_ptr<Table>> &db, const std::string &query) {
+    if (db.empty()) return ErrorCode::ERROR_EMPTY_DATABASE;
+
+    std::istringstream iss(query);
+    std::string star, from, tableName;
+    if (!(iss >> star >> from >> tableName) || from != "from") {
+        return ErrorCode::ERROR_INVALID_QUERY;
+    }
+
+    auto it = std::find_if(db.begin(), db.end(),
+        [&](const std::unique_ptr<Table> &t) { return t->name == tableName; });
+
+    if (it == db.end()) return ErrorCode::ERROR_UNKNOWN_TABLE;
+
+    displayTable(**it);
+    return ErrorCode::SUCCESS;
+}
+
+ErrorCode deleteFromTable(std::vector<std::unique_ptr<Table>> &db, const std::string &query) {
+    if (db.empty()) return ErrorCode::ERROR_EMPTY_DATABASE;
+
+    std::istringstream iss(query);
+    std::string from, tableName;
+    if (!(iss >> from >> tableName) || from != "from") {
+        return ErrorCode::ERROR_INVALID_QUERY;
+    }
+
+    auto it = std::find_if(db.begin(), db.end(),
+        [&](const std::unique_ptr<Table> &t) { return t->name == tableName; });
+    if (it == db.end()) return ErrorCode::ERROR_UNKNOWN_TABLE;
+
+    if (!(*it)->data.empty()) {
+        (*it)->data.erase((*it)->data.begin());
+        (*it)->rows--;
+        std::cout << "Row deleted from " << tableName << ".\n";
+    }
+    return ErrorCode::SUCCESS;
+}
+
+ErrorCode dropTable(std::vector<std::unique_ptr<Table>> &db, const std::string &query) {
+    std::istringstream iss(query);
+    std::string tableName;
+    if (!(iss >> tableName)) return ErrorCode::ERROR_INVALID_QUERY;
+
+    auto it = std::remove_if(db.begin(), db.end(),
+        [&](const std::unique_ptr<Table> &t) { return t->name == tableName; });
+    if (it == db.end()) return ErrorCode::ERROR_UNKNOWN_TABLE;
+
+    db.erase(it, db.end());
+    std::cout << "Table " << tableName << " dropped.\n";
+    return ErrorCode::SUCCESS;
+}
+
+// ------------------ Main ------------------
+int main() {
+    std::vector<std::unique_ptr<Table>> database;
+    std::string query;
+
+    while (true) {
+        std::cout << "\nEnter Query: ";
+        if (!std::getline(std::cin, query)) break;
+
+        query = trim(query);
+        std::string lowerQuery = query;
+        std::transform(lowerQuery.begin(), lowerQuery.end(), lowerQuery.begin(), ::tolower);
+
+        if (lowerQuery == "display") {
+            for (const auto &t : database) displayTable(*t);
+        } else if (lowerQuery == "save") {
+            saveDatabase(database);
+        } else if (lowerQuery == "quit") {
+            database.clear();
+            break;
+        } else if (lowerQuery.rfind("create", 0) == 0) {
+            createTable(database, query.substr(7));
+        } else if (lowerQuery.rfind("insert", 0) == 0) {
+            insertIntoTable(database, query.substr(7));
+        } else if (lowerQuery.rfind("drop", 0) == 0) {
+            dropTable(database, query.substr(5));
+        } else if (lowerQuery.rfind("delete", 0) == 0) {
+            deleteFromTable(database, query.substr(7));
+        } else if (lowerQuery.rfind("select", 0) == 0) {
+            selectFromTable(database, query.substr(7));
+        } else {
+            std::cout << "Invalid query.\n";
+        }
+    }
+
+    return static_cast<int>(ErrorCode::SUCCESS);
+}
